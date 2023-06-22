@@ -1,68 +1,95 @@
-from random import randint
 from timeit import default_timer as timer
 from typing import Tuple, List
-
 import rtree
 from rtree import index
+import os
+import random
+import face_recognition
+import numpy as np
+
+from Heap import MaxHeap
+
+path = 'C:/Users/rojot/OneDrive/Escritorio/bd2/repo/lab10/lfw'  # replace
+k = 8  # always find 8 nearest
 
 
-def euclidiana(q, doc):
-    dist = 0
-    for i in range(len(q)):
-        dist += abs(q[i] - doc[i]) ** 2
-    return dist ** (1 / 2)
-
-
-def query_rtree(pts: List[Tuple[int, int]], idx: rtree.Index, q: Tuple[int, int]) -> float:
+def query_rtree(embeds: List[np.ndarray], idx: rtree.Index, q: np.ndarray) -> float:
     s = 0
-    for k in [3, 6, 9]:
-        start = timer()
-        lres = list(pts[i] for i in idx.nearest(coordinates=q, num_results=k))
-        end = timer()
-        s += float(end - start)
-        print(f"Los {k} vecinos mas cercanos usando rtree de {q} son: {lres}")
+    start = timer()
+    lres = list(embeds[i] for i in idx.nearest(coordinates=q, num_results=k))
+    end = timer()
+    s += float(end - start)
     return s / 1000
 
 
-def query_linear(pts: List[Tuple[int, int]], q: Tuple[int, int]) -> float:
+def query_linear(pts: List[np.ndarray], q: np.ndarray) -> float:
+    class DistWrapper:
+        def __init__(self, d: float, embed: np.ndarray):
+            self.dist = d
+            self.embed = embed
+
+        def __lt__(self, other):
+            return self.dist < other.dist
+
+        def __gt__(self, other):
+            return self.dist > other.dist
+
+        def __eq__(self, other):
+            return self.dist == other.dist
+
     s = 0
-    k = 8
-    dists = []
+    dists = MaxHeap[DistWrapper]()
     start = timer()
     for c in pts:
-        dist = euclidiana(q, c)
-        dists.append([round(dist, 3), c])
-    dists = sorted(dists, key=lambda x: x[0], reverse=False)
-    dists = [pt for dist, pt in dists[:k]]
+        dist = np.linalg.norm(c - q)
+        if dists.size() < k:
+            dists.push(DistWrapper(d=dist, embed=c))
+        elif dists.top().dist > dist:
+            dists.pop()
+            dists.push(DistWrapper(d=dist, embed=c))
     end = timer()
     s += float(end - start)
-    print(f"Los {k} vecinos mas cercanos usando lineal de {q} son: {dists}")
 
     return s / 1000
 
 
 def analyze_performance(n: int):
     p = index.Property()
-    p.dimension = 2  # D
+    p.dimension = 128  # D
     p.buffering_capacity = 10  # M
     idx = index.Index(properties=p)
 
-    pts = [(randint(1, n), randint(1, n)) for i in range(n)]
+    faces = []
+
+    for subdir, dirs, files in os.walk(path):
+        for file in files:
+            face_path = os.path.join(subdir, file)
+            faces.append(face_path)
+
+    faces_to_compare = random.sample(faces, n)
+
+    face_embeddings = []
+
+    for face_file in faces_to_compare:
+        image = face_recognition.load_image_file(face_file)
+        embedding_list = face_recognition.face_encodings(image)
+        if len(embedding_list) > 0:
+            face_embeddings.append(embedding_list[0])
 
     # insertar puntos
-    for i in range(n):
-        idx.insert(i, pts[i])
+    for i in range(len(face_embeddings)):
+        idx.insert(i, face_embeddings[i])
 
     # hacer consulta
-    q = (1, 2)
-    res_rtree = query_rtree(pts, idx, q)
-    res_linear = query_linear(pts, q)
+    q = face_embeddings[5]
+    res_rtree = query_rtree(face_embeddings, idx, q)
+    res_linear = query_linear(face_embeddings, q)
     print(f"Tiempo RTree para N={n}: {res_rtree}")
     print(f"Tiempo linear scan para N={n}: {res_linear}")
 
 
 def main():
-    for N in [pow(10, i) for i in range(2, 8)]:
+    for N in [pow(10, i) for i in range(1, 4)]:
         analyze_performance(N)
 
 

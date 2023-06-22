@@ -3,3 +3,4 @@ venv
 lfw
 fotos_bd
 fotos_test
+__pycache__

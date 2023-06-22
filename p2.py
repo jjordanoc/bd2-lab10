@@ -30,6 +30,7 @@ face_embeddings = []
 for face_file in faces_to_compare:
     image = face_recognition.load_image_file(face_file)
     embedding_list = face_recognition.face_encodings(image)
+    print(len(embedding_list[0]))
     if len(embedding_list) > 0:
         face_embeddings.append(embedding_list[0])
 
